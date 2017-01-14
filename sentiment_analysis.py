@@ -1,6 +1,9 @@
 import argparse
+from collections import OrderedDict
 
 import pandas
+from nltk import pos_tag
+from nltk.tokenize import word_tokenize
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from matplotlib import pyplot
 
@@ -91,6 +94,24 @@ def show_polarity_histogram(positive_tweets: list, negative_tweets: list):
     pyplot.show()
 
 
+def extract_dominant_nouns(texts, limit=10):
+    nouns = {}
+    for text in texts:
+        tagged_text = pos_tag(word_tokenize(text))
+        for word in tagged_text:
+            if word[1] == 'NN':
+                nouns[word] = nouns.get(word, 0) + 1
+
+    # Sort nouns dictionary by count of occurrences
+    ordered_nouns = OrderedDict(reversed(sorted(nouns.items(), key=lambda t: t[1])))
+
+    dominant_nouns = []
+    for i in range(limit):
+        dominant_nouns.append(list(ordered_nouns.items())[i])
+
+    return dominant_nouns
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Perform sentiment analysis on given dataset of tweets.')
     parser.add_argument('-d', '--dataset-path', required=True,
@@ -110,11 +131,17 @@ def main():
     for neg in sorted(negative_tweets, key=lambda x: x['polarity_scores']['neg'])[-10:]:
         print('N score: {0}, {1}'.format(neg['polarity_scores']['neg'], neg['tweet'].text))
 
+    print('Dominant negative topics:')
+    # print(extract_dominant_nouns((neg['tweet'].text for neg in negative_tweets)))
+
     # Positive tweets
     positive_tweets = get_positive_tweets(analysed_tweets)
     print('\nTop 10 positive tweets:')
     for pos in sorted(positive_tweets, key=lambda x: x['polarity_scores']['pos'])[-10:]:
         print('Positive score: {0}, {1}'.format(pos['polarity_scores']['pos'], pos['tweet'].text))
+
+    print('Dominant positive topics:')
+    # print(extract_dominant_nouns((pos['tweet'].text for pos in positive_tweets)))
 
     # neutral tweets
     neutral_tweets = get_neutral_tweets(analysed_tweets)
