@@ -1,4 +1,6 @@
-import numpy
+import pickle
+
+import numpy.random
 import pandas
 from keras.utils.np_utils import to_categorical
 from keras.models import Sequential
@@ -70,6 +72,10 @@ emotions = dataset['sentiment']
 tokenizer = Tokenizer()
 tokenizer.fit_on_texts(tweets)
 
+# Dump tokenizer, so it can be later used to perform text classifications
+with open('tokenizer.bin', 'wb') as tokenizer_file:
+    pickle.dump(tokenizer, tokenizer_file)
+
 preprocessed_texts = tokenizer.texts_to_sequences(tweets)
 
 # Emotions
@@ -119,11 +125,29 @@ model.add(Dense(13, activation='sigmoid'))
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 print(model.summary())
 
-model.fit(preprocessed_texts, emotions, validation_split=0.2, nb_epoch=10, batch_size=256, verbose=1)
+model.fit(preprocessed_texts, emotions, validation_split=0.3, nb_epoch=7, batch_size=256, verbose=1)
 
 # Final evaluation of the model
 scores = model.evaluate(preprocessed_texts, emotions, verbose=0)
 print("Accuracy: %.2f%%" % (scores[1]*100))
+
+
+def get_emotion_from_categorical(categorical):
+    for i in range(len(categorical)):
+        if categorical[i] == 1:
+            return i
+
+
+# Write predictions to a file
+predictions = model.predict_classes(preprocessed_texts)
+with open('predictions.txt', 'w', encoding='utf-8') as predictions_file:
+    for i, pred in enumerate(predictions):
+        predictions_file.write('Correct: {correct}, Predicted {pred},'
+                               ' Actual {actual}: {text}\n'.format(
+            correct=bool(pred == get_emotion_from_categorical(emotions[i])),
+            pred=pred,
+            actual=get_emotion_from_categorical(emotions[i]),
+            text=tweets.iloc[i]))
 
 # Save model
 model.save('emotion_analysis_CNN.h5')
