@@ -1,0 +1,5 @@
+tweepy==3.5.0
+pandas==0.19.2
+nltk==3.2.2
+tensorflow==0.12.1
+Keras==1.2.1

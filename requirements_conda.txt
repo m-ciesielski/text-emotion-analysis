@@ -1,0 +1,5 @@
+mingw==4.7
+libpython==2.0
+scipy==0.18.1
+theano==0.8.2
+h5py==2.6.0
