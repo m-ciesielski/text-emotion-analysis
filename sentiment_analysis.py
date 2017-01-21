@@ -1,7 +1,8 @@
 import argparse
 
 import pandas
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
+import nltk
+import nltk.sentiment.vader
 from matplotlib import pyplot
 
 from models.preprocessed_tweet import PreprocessedTweet
@@ -9,7 +10,7 @@ from models.preprocessed_tweet import PreprocessedTweet
 
 class SentimentAnalyzer:
     def __init__(self):
-        self.sid = SentimentIntensityAnalyzer()
+        self.sid = nltk.sentiment.vader.SentimentIntensityAnalyzer()
 
 
 def sentiment_analysis(sentiment_analyzer: SentimentAnalyzer, tweet: PreprocessedTweet):
@@ -30,6 +31,8 @@ def analyze_tweets(dataset_path: str, limit=None):
         # Ignore tweets that are referring to another tweet
         if 'https://t.co' in preprocessed_tweet.text:
             continue
+
+        print('Analyzing tweet #{0}'.format(row[0]))
         analysed_tweet = sentiment_analysis(sentiment_analyzer, preprocessed_tweet)
         analysed_tweets.append(analysed_tweet)
 
@@ -91,6 +94,10 @@ def show_polarity_histogram(positive_tweets: list, negative_tweets: list):
     pyplot.show()
 
 
+def download_required_corpora():
+    nltk.download(info_or_id="vader_lexicon")
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Perform sentiment analysis on given dataset of tweets.')
     parser.add_argument('-d', '--dataset-path', required=True,
@@ -102,6 +109,7 @@ def parse_args():
 
 def main():
     args = parse_args()
+    download_required_corpora()
     analysed_tweets = analyze_tweets(args.dataset_path, args.limit)
 
     # Negative tweets
