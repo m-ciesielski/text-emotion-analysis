@@ -32,7 +32,6 @@ def analyze_tweets(dataset_path: str, limit=None):
         if 'https://t.co' in preprocessed_tweet.text:
             continue
 
-        print('Analyzing tweet #{0}'.format(row[0]))
         analysed_tweet = sentiment_analysis(sentiment_analyzer, preprocessed_tweet)
         analysed_tweets.append(analysed_tweet)
 
@@ -72,6 +71,13 @@ def print_overall_metrics(analysed_tweets: list, positive_tweets: list, negative
     print('Positive sentiment score: {0}'.format(positive_sentiment_score))
     print('Negative sentiment score: {0}'.format(negative_sentiment_score))
 
+    print('Positive sentiment score percentage: {0}'.format(positive_sentiment_score /
+                                                            (positive_sentiment_score + negative_sentiment_score)
+                                                            * 100))
+    print('Negative sentiment score percentage: {0}'.format(negative_sentiment_score /
+                                                            (positive_sentiment_score + negative_sentiment_score)
+                                                            * 100))
+
     print('Analysed tweets: {0}'.format(len(analysed_tweets)))
     print('Positive tweets: {0}'.format(len(positive_tweets)))
     print('Negative tweets: {0}'.format(len(negative_tweets)))
@@ -104,6 +110,8 @@ def parse_args():
                         type=str, help='Path to dataset CSV file.')
     parser.add_argument('-l', '--limit', type=int, required=False,
                         help='Limit number of items to analyze.')
+    parser.add_argument('-p', '--plot', type=bool, default=False,
+                        help='Show sentiment polarity histogram.')
     return parser.parse_args()
 
 
@@ -114,24 +122,17 @@ def main():
 
     # Negative tweets
     negative_tweets = get_negative_tweets(analysed_tweets)
-    print('\nTop 10 negative tweets:')
-    for neg in sorted(negative_tweets, key=lambda x: x['polarity_scores']['neg'])[-10:]:
-        print('N score: {0}, {1}'.format(neg['polarity_scores']['neg'], neg['tweet'].text))
 
     # Positive tweets
     positive_tweets = get_positive_tweets(analysed_tweets)
-    print('\nTop 10 positive tweets:')
-    for pos in sorted(positive_tweets, key=lambda x: x['polarity_scores']['pos'])[-10:]:
-        print('Positive score: {0}, {1}'.format(pos['polarity_scores']['pos'], pos['tweet'].text))
 
     # neutral tweets
     neutral_tweets = get_neutral_tweets(analysed_tweets)
-    print('\nTop 10 neutral tweets:')
-    for neu in sorted(neutral_tweets, key=lambda x: x['polarity_scores']['neu'])[-10:]:
-        print('Neutral score: {0}, {1}'.format(neu['polarity_scores']['neu'], neu['tweet'].text))
 
     print_overall_metrics(analysed_tweets, positive_tweets, negative_tweets)
-    show_polarity_histogram(positive_tweets, negative_tweets)
+
+    if args.plot:
+        show_polarity_histogram(positive_tweets, negative_tweets)
 
 
 if __name__ == '__main__':
