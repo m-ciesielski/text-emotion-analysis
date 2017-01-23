@@ -17,7 +17,12 @@ SEED = 7
 DATASET_PATH = 'text_emotion.csv'
 ngram_range = 1
 max_features = 50000
-nb_epoch = 5
+
+
+def get_emotion_from_categorical(categorical):
+    for i in range(len(categorical)):
+        if categorical[i] == 1:
+            return i
 
 numpy.random.seed(SEED)
 
@@ -32,7 +37,7 @@ emotions = dataset['sentiment']
 tokenizer = Tokenizer()
 tokenizer.fit_on_texts(tweets)
 
-# Dump tokenizer, so it can be later used to perform text classifications
+# Dump fitted tokenizer
 with open('tokenizer.bin', 'wb') as tokenizer_file:
     pickle.dump(tokenizer, tokenizer_file)
 
@@ -49,42 +54,34 @@ emotions = to_categorical(emotions)
 max_words = 37
 preprocessed_texts = sequence.pad_sequences(preprocessed_texts, maxlen=max_words)
 
-
-# create the model
 print('Build model...')
 model = Sequential()
 model.add(Embedding(max_features, 32, input_length=max_words))
 model.add(Convolution1D(nb_filter=32, filter_length=3, border_mode='same', activation='relu'))
 model.add(MaxPooling1D(pool_length=2))
 model.add(Flatten())
-model.add(Dense(250, activation='relu'))
+model.add(Dense(300, activation='relu'))
 model.add(Dense(13, activation='sigmoid'))
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 print(model.summary())
 
-model.fit(preprocessed_texts, emotions, validation_split=0.3, nb_epoch=10, batch_size=256, verbose=1)
+model.fit(preprocessed_texts, emotions, validation_split=0.3, nb_epoch=18, batch_size=128, verbose=1)
 
 # Final evaluation of the model
 scores = model.evaluate(preprocessed_texts, emotions, verbose=0)
 print("Accuracy: %.2f%%" % (scores[1]*100))
 
 
-def get_emotion_from_categorical(categorical):
-    for i in range(len(categorical)):
-        if categorical[i] == 1:
-            return i
-
-
-# Write predictions to a file
-predictions = model.predict_classes(preprocessed_texts)
-with open('predictions.txt', 'w', encoding='utf-8') as predictions_file:
-    for i, pred in enumerate(predictions):
-        predictions_file.write('Correct: {correct}, Predicted {pred},'
-                               ' Actual {actual}: {text}\n'.format(
-            correct=bool(pred == get_emotion_from_categorical(emotions[i])),
-            pred=pred,
-            actual=get_emotion_from_categorical(emotions[i]),
-            text=tweets.iloc[i]))
-
-# Save model
+## Write predictions results to a file
+#predictions = model.predict_classes(preprocessed_texts)
+#with open('predictions.txt', 'w', encoding='utf-8') as predictions_file:
+#    for i, pred in enumerate(predictions):
+#        predictions_file.write('Correct: {correct}, Predicted {pred},'
+#                               ' Actual {actual}: {text}\n'.format(
+#            correct=bool(pred == get_emotion_from_categorical(emotions[i])),
+#            pred=pred,
+#            actual=get_emotion_from_categorical(emotions[i]),
+#            text=tweets.iloc[i]))
+#
+## Save model
 model.save('emotion_analysis_CNN.h5')
