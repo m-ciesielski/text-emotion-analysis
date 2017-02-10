@@ -1,3 +1,4 @@
+from collections import namedtuple
 import argparse
 
 import pandas
@@ -13,13 +14,13 @@ class SentimentAnalyzer:
         self.sid = nltk.sentiment.vader.SentimentIntensityAnalyzer()
 
 
-def sentiment_analysis(sentiment_analyzer: SentimentAnalyzer, tweet: PreprocessedTweet):
+def sentiment_analysis(sentiment_analyzer: SentimentAnalyzer, tweet: PreprocessedTweet) -> dict:
     assert tweet
     polarity_scores = sentiment_analyzer.sid.polarity_scores(tweet.text)
     return {'tweet': tweet, 'polarity_scores': polarity_scores}
 
 
-def analyze_tweets(dataset_path: str, limit=None):
+def analyze_tweets(dataset_path: str, limit=None) -> list:
     analysed_tweets = []
     sentiment_analyzer = SentimentAnalyzer()
     dataset = pandas.read_csv(dataset_path, delimiter=' ', quotechar='|')
@@ -32,29 +33,47 @@ def analyze_tweets(dataset_path: str, limit=None):
         if 'https://t.co' in preprocessed_tweet.text:
             continue
 
+        print('Analyzing tweet #{0}'.format(row[0]))
         analysed_tweet = sentiment_analysis(sentiment_analyzer, preprocessed_tweet)
         analysed_tweets.append(analysed_tweet)
 
     return analysed_tweets
 
 
-def get_negative_tweets(analysed_tweets: list):
-    return [t for t in analysed_tweets
-            if t['polarity_scores']['neg'] > 0
-            and t['polarity_scores']['neg'] > t['polarity_scores']['pos']]
+def is_tweet_negative(analysed_tweet: dict) -> bool:
+    return analysed_tweet['polarity_scores']['neg'] > 0\
+           and analysed_tweet['polarity_scores']['neg'] > analysed_tweet['polarity_scores']['pos']
 
 
-def get_positive_tweets(analysed_tweets: list):
-    return [t for t in analysed_tweets
-            if t['polarity_scores']['pos'] > 0
-            and t['polarity_scores']['pos'] > t['polarity_scores']['neg']]
+def is_tweet_positive(analysed_tweet: dict) -> bool:
+    return analysed_tweet['polarity_scores']['pos'] > 0 \
+           and analysed_tweet['polarity_scores']['pos'] > analysed_tweet['polarity_scores']['neg']
 
 
-def get_neutral_tweets(analysed_tweets: list):
-    return [t for t in analysed_tweets
-            if t['polarity_scores']['neu'] > 0
-            and t['polarity_scores']['neu'] > t['polarity_scores']['neg']
-            and t['polarity_scores']['neu'] > t['polarity_scores']['pos']]
+def is_tweet_neutral(analysed_tweet: dict) -> bool:
+    return analysed_tweet['polarity_scores']['neu'] > 0\
+           and analysed_tweet['polarity_scores']['neu'] > analysed_tweet['polarity_scores']['neg']\
+           and analysed_tweet['polarity_scores']['neu'] > analysed_tweet['polarity_scores']['pos']
+
+
+def classify_tweets(analysed_tweets: list) -> tuple:
+    """
+    Creates a tuple of three lists: positive, negative and neutral tweets from list of analysed_tweets.
+    Suggested use:
+        positive_tweets, negative_tweets, neutral_tweets = classify_tweets(analysed_tweets)
+    :param analysed_tweets: list of dicts with 'polarity_scores' field
+    :return: tuple of three lists - ([positive], [negative], [neutral])
+    """
+    classified_tweets = ([], [], [])
+    for t in analysed_tweets:
+        if is_tweet_positive(t):
+            classified_tweets[0].append(t)
+        if is_tweet_negative(t):
+            classified_tweets[1].append(t)
+        if is_tweet_neutral(t):
+            classified_tweets[2].append(t)
+
+    return classified_tweets
 
 
 def print_overall_metrics(analysed_tweets: list, positive_tweets: list, negative_tweets: list):
@@ -110,24 +129,31 @@ def parse_args():
                         type=str, help='Path to dataset CSV file.')
     parser.add_argument('-l', '--limit', type=int, required=False,
                         help='Limit number of items to analyze.')
-    parser.add_argument('-p', '--plot', type=bool, default=False,
-                        help='Show sentiment polarity histogram.')
+    parser.add_argument('-p', '--plot', action='store_true')
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     download_required_corpora()
+
     analysed_tweets = analyze_tweets(args.dataset_path, args.limit)
+    positive_tweets, negative_tweets, neutral_tweets = classify_tweets(analysed_tweets)
 
     # Negative tweets
-    negative_tweets = get_negative_tweets(analysed_tweets)
+    print('\nTop 10 negative tweets:')
+    for neg in sorted(negative_tweets, key=lambda x: x['polarity_scores']['neg'])[-10:]:
+        print('N score: {0}, {1}'.format(neg['polarity_scores']['neg'], neg['tweet'].text))
 
     # Positive tweets
-    positive_tweets = get_positive_tweets(analysed_tweets)
+    print('\nTop 10 positive tweets:')
+    for pos in sorted(positive_tweets, key=lambda x: x['polarity_scores']['pos'])[-10:]:
+        print('Positive score: {0}, {1}'.format(pos['polarity_scores']['pos'], pos['tweet'].text))
 
     # neutral tweets
-    neutral_tweets = get_neutral_tweets(analysed_tweets)
+    print('\nTop 10 neutral tweets:')
+    for neu in sorted(neutral_tweets, key=lambda x: x['polarity_scores']['neu'])[-10:]:
+        print('Neutral score: {0}, {1}'.format(neu['polarity_scores']['neu'], neu['tweet'].text))
 
     print_overall_metrics(analysed_tweets, positive_tweets, negative_tweets)
 
