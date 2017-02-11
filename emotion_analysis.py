@@ -1,5 +1,6 @@
 import argparse
 import pickle
+import csv
 
 import numpy
 import pandas
@@ -14,33 +15,53 @@ emotion_labels = {0: 'love', 1: 'enthusiasm', 2: 'happiness', 3: 'fun', 4: 'reli
                   12: 'hate'}
 
 
-def analyze_tweets(model, dataset_path: str, tokenizer_path: str, max_words=37):
+def get_tweets_from_dataset(dataset_path: str):
     dataset = pandas.read_csv(dataset_path, delimiter=' ', quotechar='|')
-    tweets = dataset['Text']
+    return dataset['Text']
 
-    # Preprocess texts
+
+def load_tokenizer(tokenizer_path: str):
     with open(tokenizer_path, 'rb') as tokenizer_file:
         tokenizer = pickle.load(tokenizer_file)
+    return tokenizer
 
+
+def get_emotion_from_categorical(categorical):
+    for i in range(len(categorical)):
+        if categorical[i] == 1:
+            return i
+
+
+def get_predicted_emotion(prediction_array):
+    predicted_class_index = numpy.argmax(prediction_array)
+    return emotion_labels[predicted_class_index]
+
+
+def get_prediction_accuracy(prediction_array):
+    return numpy.max(prediction_array)
+
+
+def preprocess_tweets(tweets: list, tokenizer, max_words=37) -> list:
     preprocessed_tweets = tokenizer.texts_to_sequences(tweets)
-
-    # Padding
     preprocessed_tweets = sequence.pad_sequences(preprocessed_tweets, maxlen=max_words)
+    return preprocessed_tweets
 
+
+def analyze_tweets(model, preprocessed_tweets: list):
     # Analyze
     predicted_classes = model.predict_classes(numpy.array(preprocessed_tweets), verbose=0)
     prediction_confidence = []
     for scores in model.predict(preprocessed_tweets, verbose=0):
         prediction_confidence.append(numpy.max(scores))
-    results = zip(predicted_classes, prediction_confidence, tweets)
+    results = zip(predicted_classes, prediction_confidence, preprocessed_tweets)
 
     # Calculate weighted results
     weighted_results = {'love': 0, 'enthusiasm': 0, 'happiness': 0, 'fun': 0, 'relief': 0, 'surprise': 0,
-                  'neutral': 0, 'empty': 0, 'boredom': 0, 'worry': 0, 'sadness': 0, 'anger': 0,
-                  'hate': 0}
+                        'neutral': 0, 'empty': 0, 'boredom': 0, 'worry': 0, 'sadness': 0, 'anger': 0,
+                        'hate': 0}
 
     for result in results:
-        weighted_results[emotion_labels[result[0]]] += 1 - (1 - result[1])
+        weighted_results[emotion_labels[result[0]]] += result[1]
 
     weighted_results_sum = 0
     print('Weighted results:')
@@ -52,6 +73,18 @@ def analyze_tweets(model, dataset_path: str, tokenizer_path: str, max_words=37):
     for key in weighted_results:
         print('  - Emotion: {0}\n    weighted result percentage: {1}'.format(key,
                                                                      (weighted_results[key]/weighted_results_sum)*100))
+
+
+def write_predictions_to_file(file_path, model, preprocessed_tweets, tweets):
+    predictions = model.predict(numpy.array(preprocessed_tweets))
+    assert len(predictions) == len(preprocessed_tweets)
+    with open(file_path, "w", encoding='utf-8') as csv_file:
+        result_writer = csv.writer(csv_file, delimiter=' ',
+                                   quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        result_writer.writerow(['Emotion', 'Accuracy', 'Text'])
+        for i, pred in enumerate(predictions):
+            result_writer.writerow([get_predicted_emotion(pred), '{0:.2f}'.format(get_prediction_accuracy(pred)),
+                                    tweets.iloc[i]])
 
 
 def parse_args():
@@ -68,8 +101,13 @@ def parse_args():
 
 def main():
     args = parse_args()
+    tweets = get_tweets_from_dataset(args.dataset_path)
+    tokenizer = load_tokenizer(args.tokenizer_path)
     model = load_model(args.model_path)
-    analyze_tweets(model, args.dataset_path, args.tokenizer_path)
+
+    preprocessed_tweets = preprocess_tweets(tweets, tokenizer)
+    analyze_tweets(model, preprocessed_tweets)
+    write_predictions_to_file('ea_results.txt', model, preprocessed_tweets, tweets)
 
 if __name__ == '__main__':
     main()

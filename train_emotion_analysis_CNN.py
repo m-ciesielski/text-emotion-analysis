@@ -43,11 +43,10 @@ with open('tokenizer.bin', 'wb') as tokenizer_file:
 
 preprocessed_texts = tokenizer.texts_to_sequences(tweets)
 
-# Emotions
-emotions_tokens = {'love': 0, 'enthusiasm': 1, 'happiness': 2, 'fun': 3, 'relief': 4, 'surprise': 5,
+emotion_labels = {'love': 0, 'enthusiasm': 1, 'happiness': 2, 'fun': 3, 'relief': 4, 'surprise': 5,
                    'neutral': 6, 'empty': 7, 'boredom': 8, 'worry': 9, 'sadness': 10, 'anger': 11,
                    'hate': 12}
-emotions = [emotions_tokens[e] for e in emotions]
+emotions = [emotion_labels[e] for e in emotions]
 emotions = to_categorical(emotions)
 
 # Padding
@@ -62,26 +61,25 @@ model.add(MaxPooling1D(pool_length=2))
 model.add(Flatten())
 model.add(Dense(300, activation='relu'))
 model.add(Dense(13, activation='sigmoid'))
-model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
 print(model.summary())
 
-model.fit(preprocessed_texts, emotions, validation_split=0.3, nb_epoch=18, batch_size=128, verbose=1)
+model.fit(preprocessed_texts, emotions, validation_split=0.4, nb_epoch=11, batch_size=128, verbose=1)
 
-# Final evaluation of the model
+
 scores = model.evaluate(preprocessed_texts, emotions, verbose=0)
 print("Accuracy: %.2f%%" % (scores[1]*100))
 
 
-## Write predictions results to a file
-#predictions = model.predict_classes(preprocessed_texts)
-#with open('predictions.txt', 'w', encoding='utf-8') as predictions_file:
-#    for i, pred in enumerate(predictions):
-#        predictions_file.write('Correct: {correct}, Predicted {pred},'
-#                               ' Actual {actual}: {text}\n'.format(
-#            correct=bool(pred == get_emotion_from_categorical(emotions[i])),
-#            pred=pred,
-#            actual=get_emotion_from_categorical(emotions[i]),
-#            text=tweets.iloc[i]))
-#
-## Save model
-model.save('emotion_analysis_CNN.h5')
+# Write predictions results to a file
+predictions = model.predict_classes(preprocessed_texts)
+with open('predictions.txt', 'w', encoding='utf-8') as predictions_file:
+    for i, pred in enumerate(predictions):
+        predictions_file.write('Correct: {correct}, Predicted {pred},'
+                               ' Actual {actual}: {text}\n'.format(
+            correct=bool(pred == get_emotion_from_categorical(emotions[i])),
+            pred=pred,
+            actual=get_emotion_from_categorical(emotions[i]),
+            text=tweets.iloc[i]))
+
+model.save('emotion_analysis_CNN_new.h5')
