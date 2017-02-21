@@ -7,7 +7,7 @@ from requests.packages.urllib3.exceptions import ProtocolError
 from models.preprocessed_tweet import PreprocessedTweet
 
 
-class CollectorStreamListener(tweepy.StreamListener):
+class CsvStreamListener(tweepy.StreamListener):
     def __init__(self, csv_file_name):
         tweepy.StreamListener.__init__(self)
         self.csv_file_name = csv_file_name
@@ -17,7 +17,26 @@ class CollectorStreamListener(tweepy.StreamListener):
         preproc_tweet = PreprocessedTweet(text=status.text, timestamp_ms=status.timestamp_ms,
                                           hashtags=status.entities['hashtags'],
                                           retweet_count=status.retweet_count)
-        preproc_tweet.save_in_csv(self.csv_file_name)
+        with open(self.csv_file_name, "a", encoding='utf-8') as csv_file:
+            preproc_tweet.save_in_csv(csv_file)
+
+
+class StreamCollector:
+    def __init__(self, stream_listener: tweepy.StreamListener, api: tweepy.API, keywords: list):
+        self.stream_listener = stream_listener
+        self.api = api
+        self.keywords = keywords
+
+    def collect_tweets(self):
+        collector_stream = tweepy.Stream(auth=self.api.auth, listener=self.stream_listener)
+        while True:
+            try:
+                collector_stream.filter(track=self.keywords)
+            except ProtocolError:
+                continue
+            except KeyboardInterrupt:
+                collector_stream.disconnect()
+                break
 
 
 def load_configuration(path):
@@ -29,21 +48,7 @@ def load_configuration(path):
 def initialize_twitter_api(twitter_credentials):
     auth = tweepy.OAuthHandler(twitter_credentials['consumer_key'], twitter_credentials['consumer_secret'])
     auth.set_access_token(twitter_credentials['access_token'], twitter_credentials['access_token_secret'])
-
     return tweepy.API(auth)
-
-
-def collect_tweets(api, keywords, csv_file_name):
-    collector_stream_listener = CollectorStreamListener(csv_file_name)
-    collector_stream = tweepy.Stream(auth=api.auth, listener=collector_stream_listener)
-    while True:
-        try:
-            collector_stream.filter(track=keywords)
-        except ProtocolError:
-            continue
-        except KeyboardInterrupt:
-            collector_stream.disconnect()
-            break
 
 
 def parse_args():
@@ -56,10 +61,14 @@ def parse_args():
                         type=str, help='Path to configuration file.')
     return parser.parse_args()
 
-
-if __name__ == '__main__':
+def main():
     args = parse_args()
     config = load_configuration(args.config_file)
     twitter_api = initialize_twitter_api(config['twitter_credentials'])
-    collect_tweets(twitter_api, args.keywords, args.csv_file_name)
+    csv_stream_listener = CsvStreamListener(args.csv_file_name)
+    stream_collector = StreamCollector(csv_stream_listener, twitter_api, args.keywords)
+    stream_collector.collect_tweets()
 
+
+if __name__ == '__main__':
+    main()
