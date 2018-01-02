@@ -116,7 +116,7 @@ def main():
     tweets = get_tweets_from_dataset(args.dataset_path)
     preprocessed_tweets = preprocess_tweets(tweets, tokenizer)
     # analyze_tweets(model, args.dataset_path, args.tokenizer_path)
-    write_predictions_to_file('ea_results_6_cat.txt', model, preprocessed_tweets, tweets)
+    write_predictions_to_file('joy_1_results_cat.txt', model, preprocessed_tweets, tweets)
 
 if __name__ == '__main__':
     main()

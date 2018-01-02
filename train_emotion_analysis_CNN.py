@@ -1,3 +1,4 @@
+import argparse
 import pickle
 import time
 import os
@@ -6,7 +7,7 @@ import numpy
 import pandas
 from keras.utils.np_utils import to_categorical
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, SpatialDropout1D, MaxPooling1D, Flatten
 from keras.layers import Convolution1D
 from keras.layers import GlobalMaxPooling1D
 from keras.layers import Dropout
@@ -30,20 +31,20 @@ emotion_labels = {'love': 0, 'happiness': 1, 'enthusiasm': 1, 'fun': 1, 'relief'
 
 emotion_indices = {0: 'love', 1: 'happiness', 2: 'neutral', 3: 'worry', 4: 'sadness', 5: 'hate'}
 
-emotion_labels_array = ['love', 'happiness', 'neutral', 'worry', 'sadness', 'anger']
+emotion_labels_array = [v for _, v in emotion_indices.items()]
 
 
 def gloveless_model():
     print('Build model without GloVe embeddings...')
     model = Sequential()
-    model.add(Embedding(max_features, 8, input_length=MAX_WORDS, dropout=0.6))
-    model.add(Convolution1D(filters=64, kernel_size=3, padding='valid', strides=1, activation='relu'))
+    model.add(Embedding(max_features, 8, input_length=MAX_WORDS))
+    model.add(SpatialDropout1D(0.4))
+    model.add(Convolution1D(filters=64, kernel_size=3, padding='valid', activation='relu'))
     model.add(GlobalMaxPooling1D())
-    model.add(Dropout(0.5))
+    model.add(Dropout(0.3))
     model.add(Dense(32, activation='relu'))
-    model.add(Dropout(0.5))
+    model.add(Dropout(0.3))
     model.add(Dense(6, activation='softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=[top_2_categorical_accuracy])
     return model
 
 
@@ -54,12 +55,14 @@ def glove_model():
                         EMBEDDING_DIM,
                         weights=[embedding_matrix],
                         input_length=MAX_WORDS,
-                        trainable=False,
-                        dropout=0.4))
-    model.add(Convolution1D(filters=256, kernel_size=3, padding='valid', strides=1, activation='relu'))
+                        trainable=False))
+    model.add(SpatialDropout1D(0.2))
+    model.add(Convolution1D(filters=256, kernel_size=3, padding='valid', activation='relu'))
     # model.add(Convolution1D(filters=64, kernel_size=3, padding='valid', strides=1, activation='relu'))
-    model.add(GlobalMaxPooling1D())
-    model.add(Dropout(0.5))
+    model.add(MaxPooling1D(3))
+    #model.add(GlobalMaxPooling1D())
+    model.add(Dropout(0.4))
+    model.add(Flatten())
     # model.add(Flatten())
     model.add(Dense(128, activation='relu'))
     model.add(Dropout(0.4))
@@ -77,21 +80,34 @@ def top_2_categorical_accuracy(y_true, y_pred):
     return top_k_categorical_accuracy(y_true=y_true, y_pred=y_pred, k=2)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='Perform emotion analysis on a given dataset of tweets.')
+    parser.add_argument('-d', '--dataset-path', required=True,
+                        type=str, help='Path to dataset CSV file.')
+    parser.add_argument('-m', '--model-path', default='emotion_analysis_CNN_keras_2.h5',
+                        type=str, help='Path to a file with trained emotion analysis model.')
+    parser.add_argument('-t', '--tokenizer-path', default='tokenizer.bin',
+                        type=str, help='Path to a serialized keras.preprocessing.text.Tokenizer object'
+                                       'used during model training.')
+    return parser.parse_args()
+
 if __name__ == '__main__':
+    args = parse_args()
     numpy.random.seed(SEED)
 
     # load the dataset
     dataset = pandas.read_csv(DATASET_PATH)
 
     tweets = dataset['content']
-    categorical_sentiment = dataset['sentiment']
+
+    ntiment = dataset['sentiment']
 
     # Preprocessing
     tokenizer = Tokenizer()
     tokenizer.fit_on_texts(tweets)
 
     # Dump fitted tokenizer
-    with open('tokenizer.bin', 'wb') as tokenizer_file:
+    with open('tokenizer_new_2.bin', 'wb') as tokenizer_file:
         pickle.dump(tokenizer, tokenizer_file)
 
     preprocessed_texts = tokenizer.texts_to_sequences(tweets)
@@ -136,11 +152,11 @@ if __name__ == '__main__':
                                                         test_size=0.3, random_state=SEED)
 
     print('Build model...')
-    model = glove_model()
+    model = gloveless_model()
     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=[top_2_categorical_accuracy])
     print(model.summary())
 
-    model.fit(x=x_train, y=y_train, validation_data=(x_test, y_test), epochs=16, batch_size=256, verbose=2,
+    model.fit(x=x_train, y=y_train, validation_data=(x_test, y_test), epochs=10, batch_size=64, verbose=2,
               callbacks=[CSVLogger('training_{time}.csv'.format(time=time.time()))])
 
     # Evaluate model (on test data)
@@ -151,6 +167,6 @@ if __name__ == '__main__':
                                    y_pred=[numpy.argmax(pred) for pred in predictions])
     print(conf_matrix)
 
-    # print("Accuracy: %.2f%%" % (scores[1]*100))
+    print('Category 5 test items: {}'.format(sum(1 for v in y_test if numpy.argmax(v) == 5)))
 
-    model.save('emotion_analysis_CNN_keras_2.h5')
+    model.save('emotion_analysis_CNN_keras_2_v3.h5')
