@@ -7,8 +7,7 @@ import pandas
 from keras.models import load_model
 from keras.preprocessing import sequence
 
-from train_emotion_analysis_CNN import top_2_categorical_accuracy, emotion_indices, emotion_labels
-
+from training.train_cnn import top_2_categorical_accuracy, emotion_indices, EMOTION_LABELS_MAP
 
 SEED = 7
 numpy.random.seed(SEED)
@@ -67,7 +66,7 @@ def analyze_tweets(model, dataset_path: str, tokenizer_path: str, max_words=37):
     results = zip(predicted_classes, prediction_confidence, tweets)
 
     # Calculate weighted results
-    weighted_results = emotion_labels
+    weighted_results = EMOTION_LABELS_MAP
 
     for result in results:
         weighted_results[emotion_indices[result[0]]] += result[1]
@@ -98,12 +97,15 @@ def write_predictions_to_file(file_path, model, preprocessed_tweets, tweets):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Perform emotion analysis on a given dataset of tweets.')
+    parser = argparse.ArgumentParser(description='Perform emotion analysis on a given dataset.')
     parser.add_argument('-d', '--dataset-path', required=True,
                         type=str, help='Path to dataset CSV file.')
     parser.add_argument('-m', '--model-path', default='emotion_analysis_CNN_keras_2.h5',
                         type=str, help='Path to a file with trained emotion analysis model.')
     parser.add_argument('-t', '--tokenizer-path', default='tokenizer.bin',
+                        type=str, help='Path to a serialized keras.preprocessing.text.Tokenizer object'
+                                       'used during model training.')
+    parser.add_argument('-o', '--output-path', default='inference_results.csv',
                         type=str, help='Path to a serialized keras.preprocessing.text.Tokenizer object'
                                        'used during model training.')
     return parser.parse_args()
@@ -116,7 +118,7 @@ def main():
     tweets = get_tweets_from_dataset(args.dataset_path)
     preprocessed_tweets = preprocess_tweets(tweets, tokenizer)
     # analyze_tweets(model, args.dataset_path, args.tokenizer_path)
-    write_predictions_to_file('joy_1_results_cat.txt', model, preprocessed_tweets, tweets)
+    write_predictions_to_file(args.output_path, model, preprocessed_tweets, tweets)
 
 if __name__ == '__main__':
     main()

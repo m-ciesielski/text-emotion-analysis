@@ -10,9 +10,10 @@ This repository contains scripts for:
 
 ### Prerequisites
 `Python >= 3.5`
+`virtualenv`
 
-In order to use script for tweets collection, copy `config_example.ini`
-file to `config.ini` and fill it with your Twitter application credentials.
+In order to use script for tweets collection, copy `collect/config_example.ini`
+file to `collect/config.ini` and fill it with your Twitter application credentials.
 
 
 ### Linux

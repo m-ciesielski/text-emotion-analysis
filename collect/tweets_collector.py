@@ -61,6 +61,7 @@ def parse_args():
                         type=str, help='Path to configuration file.')
     return parser.parse_args()
 
+
 def main():
     args = parse_args()
     config = load_configuration(args.config_file)

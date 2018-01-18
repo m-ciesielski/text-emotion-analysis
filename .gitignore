@@ -1,4 +1,4 @@
-config.ini
+collect/config.ini
 *.csv
 *.pyc
 .idea
@@ -6,3 +6,15 @@ venv
 *.h5
 *.bin
 *.pkl
+*.whl
+*.zip
+collected_tweets
+glove_embeddings
+benchmark_data
+results
+serialized_models
+serialized_tokenizers
+training_datasets
+training_results
+tsa_datasets
+emotion_results
