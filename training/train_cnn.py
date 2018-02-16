@@ -19,6 +19,9 @@ SEED = 7
 
 MAX_FEATURES = 50000
 
+# Maximal count of words in a sentence
+MAX_WORDS = 37
+
 # Map each label to integer value
 EMOTION_LABELS_MAP = {'love': 0, 'happiness': 1, 'enthusiasm': 1, 'fun': 1, 'relief': 1, 'neutral': 2,
                       'surprise': 2, 'empty': 2, 'boredom': 2, 'worry': 3, 'sadness': 4, 'anger': 5,
@@ -45,11 +48,14 @@ def parse_args():
                         type=str, help='Path to a file with trained emotion analysis model.')
     parser.add_argument('-t', '--tokenizer-path', default='tokenizer.pkl',
                         type=str, help='Path where tokenizer used during training will be saved.')
-    parser.add_argument('-g', '--glove-embeddings-path', default=None,
+    parser.add_argument('--glove-embeddings-path', default=None,
                         type=str, help='Path to GloVE embeddings file.')
-    parser.add_argument('-e', '--glove-embeddings-dim', default=None,
+    parser.add_argument('--glove-embeddings-dim', default=None,
                         type=int, help='GloVe embedding size.')
+    parser.add_argument('-e', '--epochs', default=None,
+                        type=int, help='Epoch count.')
     return parser.parse_args()
+
 
 if __name__ == '__main__':
     args = parse_args()
@@ -77,7 +83,6 @@ if __name__ == '__main__':
     categorical_sentiment = to_categorical(categorical_sentiment)
 
     # Padding
-    MAX_WORDS = 37
     preprocessed_texts = sequence.pad_sequences(preprocessed_texts, maxlen=MAX_WORDS)
 
     # Prepare model
@@ -105,7 +110,7 @@ if __name__ == '__main__':
         print('Found %s word vectors.' % len(embeddings_index))
         print('GloVe representations not found for %s words.' % lost_words_count)
         print('GloVe representations found for %s words.' % found_words_count)
-        model = glove_model_layered(input_dim=len(word_index) + 1,
+        model = glove_model(input_dim=len(word_index) + 1,
                             embedding_matrix=embedding_matrix,
                             embedding_dim=args.glove_embeddings_dim,
                             input_length=MAX_WORDS
@@ -119,10 +124,11 @@ if __name__ == '__main__':
                                                         test_size=0.25, random_state=SEED)
 
     print('Build model...')
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=[categorical_accuracy])
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=[categorical_accuracy,
+                                                                              top_2_categorical_accuracy])
     print(model.summary())
 
-    model.fit(x=x_train, y=y_train, validation_data=(x_test, y_test), epochs=10, batch_size=256, verbose=2,
+    model.fit(x=x_train, y=y_train, validation_data=(x_test, y_test), epochs=args.epochs, batch_size=256, verbose=2,
               callbacks=[CSVLogger('training_{time}.csv'.format(time=time.time()))])
 
     # Evaluate model (on test data)

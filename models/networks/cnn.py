@@ -3,6 +3,7 @@ from keras.layers.embeddings import Embedding
 from keras.layers.convolutional import Convolution1D
 from keras.layers.pooling import MaxPooling1D, GlobalMaxPooling1D
 from keras.layers import Dropout, SpatialDropout1D, Flatten, Dense
+from keras.regularizers import L1L2
 
 
 def glove_model(input_dim, embedding_matrix, embedding_dim, input_length):
@@ -12,7 +13,8 @@ def glove_model(input_dim, embedding_matrix, embedding_dim, input_length):
                         embedding_dim,
                         weights=[embedding_matrix],
                         input_length=input_length,
-                        trainable=False))
+                        trainable=True,
+                        embeddings_regularizer=L1L2(l2=0.01)))
     model.add(SpatialDropout1D(0.2))
     model.add(Convolution1D(filters=512, kernel_size=3, padding='valid', activation='relu'))
     # model.add(Convolution1D(filters=64, kernel_size=3, padding='valid', strides=1, activation='relu'))
@@ -21,7 +23,7 @@ def glove_model(input_dim, embedding_matrix, embedding_dim, input_length):
     model.add(Dropout(0.4))
     model.add(Flatten())
     # model.add(Flatten())
-    model.add(Dense(256, activation='relu'))
+    model.add(Dense(512, activation='relu'))
     model.add(Dropout(0.4))
     model.add(Dense(6, activation='softmax'))
     return model
