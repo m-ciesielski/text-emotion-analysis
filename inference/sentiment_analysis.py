@@ -1,12 +1,11 @@
-from collections import namedtuple
 import argparse
 
-import pandas
 import nltk
 import nltk.sentiment.vader
+import pandas
 from matplotlib import pyplot
 
-from models.preprocessed_tweet import PreprocessedTweet
+from models.tweets.preprocessed_tweet import PreprocessedTweet
 
 
 class SentimentAnalyzer:

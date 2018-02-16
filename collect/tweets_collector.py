@@ -4,7 +4,7 @@ import configparser
 import tweepy
 from requests.packages.urllib3.exceptions import ProtocolError
 
-from models.preprocessed_tweet import PreprocessedTweet
+from models.tweets.preprocessed_tweet import PreprocessedTweet
 
 
 class CsvStreamListener(tweepy.StreamListener):
