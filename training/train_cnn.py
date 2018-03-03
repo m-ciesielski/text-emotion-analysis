@@ -5,6 +5,7 @@ import os
 
 import numpy
 import pandas
+import keras.backend as K
 from keras.utils.np_utils import to_categorical
 from keras.preprocessing import sequence
 from keras.preprocessing.text import Tokenizer
@@ -24,7 +25,7 @@ MAX_WORDS = 37
 
 # Map each label to integer value
 EMOTION_LABELS_MAP = {'love': 0, 'happiness': 1, 'enthusiasm': 1, 'fun': 1, 'relief': 1, 'neutral': 2,
-                      'surprise': 2, 'empty': 2, 'boredom': 2, 'worry': 3, 'sadness': 4, 'anger': 5,
+                      'surprise': 6, 'empty': 2, 'boredom': 2, 'worry': 3, 'sadness': 4, 'anger': 5,
                       'hate': 5}
 # Map integers to labels (reverse of EMOTION_LABELS_MAP)
 EMOTION_VALUES_MAP = {value: emotion for emotion, value in EMOTION_LABELS_MAP.items()}
@@ -38,6 +39,18 @@ def get_emotion_from_categorical(categorical):
 
 def top_2_categorical_accuracy(y_true, y_pred):
     return top_k_categorical_accuracy(y_true=y_true, y_pred=y_pred, k=2)
+
+
+def precision(y_true, y_pred):
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    return true_positives / (predicted_positives + K.epsilon())
+
+
+def recall(y_true, y_pred):
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+    return true_positives / (possible_positives + K.epsilon())
 
 
 def parse_args():
@@ -67,6 +80,11 @@ if __name__ == '__main__':
 
     tweets = dataset['content']
     sentiment = dataset['sentiment']
+
+    # Print count of tweets from each class
+    for emotion in EMOTION_LABELS_MAP.keys():
+        emotion_tweets = [t[1] for t, s in zip(tweets.iteritems(), sentiment.iteritems()) if s[1] == emotion]
+        print('Count of tweets with class {}: {}'.format(emotion, len(emotion_tweets)))
 
     # Preprocessing
     tokenizer = Tokenizer()
@@ -107,9 +125,9 @@ if __name__ == '__main__':
             else:
                 lost_words_count += 1
 
-        print('Found %s word vectors.' % len(embeddings_index))
-        print('GloVe representations not found for %s words.' % lost_words_count)
-        print('GloVe representations found for %s words.' % found_words_count)
+        print('Found {} word vectors.'.format(len(embeddings_index)))
+        print('GloVe representations not found for {} words.'.format(lost_words_count))
+        print('GloVe representations found for {} words.'.format(found_words_count))
         model = glove_model(input_dim=len(word_index) + 1,
                             embedding_matrix=embedding_matrix,
                             embedding_dim=args.glove_embeddings_dim,
@@ -124,11 +142,19 @@ if __name__ == '__main__':
                                                         test_size=0.25, random_state=SEED)
 
     print('Build model...')
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=[categorical_accuracy,
-                                                                              top_2_categorical_accuracy])
+    model.compile(loss='categorical_crossentropy',
+                  optimizer='adam',
+                  metrics=[categorical_accuracy,
+                           top_2_categorical_accuracy,
+                           precision,
+                           recall])
     print(model.summary())
 
-    model.fit(x=x_train, y=y_train, validation_data=(x_test, y_test), epochs=args.epochs, batch_size=256, verbose=2,
+    model.fit(x=x_train, y=y_train,
+              validation_data=(x_test, y_test),
+              epochs=args.epochs,
+              batch_size=256,
+              verbose=2,
               callbacks=[CSVLogger('training_{time}.csv'.format(time=time.time()))])
 
     # Evaluate model (on test data)

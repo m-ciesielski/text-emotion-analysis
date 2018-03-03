@@ -25,9 +25,31 @@ def glove_model(input_dim, embedding_matrix, embedding_dim, input_length):
     # model.add(Flatten())
     model.add(Dense(512, activation='relu'))
     model.add(Dropout(0.4))
-    model.add(Dense(6, activation='softmax'))
+    model.add(Dense(7, activation='softmax'))
     return model
 
+
+def glove_sentiment_model(input_dim, embedding_matrix, embedding_dim, input_length):
+    print('Build model with GloVe embeddings...')
+    model = Sequential()
+    model.add(Embedding(input_dim,
+                        embedding_dim,
+                        weights=[embedding_matrix],
+                        input_length=input_length,
+                        trainable=True,
+                        embeddings_regularizer=L1L2(l2=0.01)))
+    model.add(SpatialDropout1D(0.2))
+    model.add(Convolution1D(filters=512, kernel_size=3, padding='valid', activation='relu'))
+    # model.add(Convolution1D(filters=64, kernel_size=3, padding='valid', strides=1, activation='relu'))
+    model.add(MaxPooling1D(3))
+    #model.add(GlobalMaxPooling1D())
+    model.add(Dropout(0.4))
+    model.add(Flatten())
+    # model.add(Flatten())
+    model.add(Dense(512, activation='relu'))
+    model.add(Dropout(0.4))
+    model.add(Dense(3, activation='softmax'))
+    return model
 
 def glove_model_layered(input_dim, embedding_matrix, embedding_dim, input_length):
     print('Build model with GloVe embeddings...')
