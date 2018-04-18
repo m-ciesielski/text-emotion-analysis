@@ -7,7 +7,8 @@ from keras.preprocessing import sequence
 from lime.lime_text import LimeTextExplainer
 import matplotlib.pyplot as plt
 
-from training.train_cnn import EMOTION_VALUES_MAP, EMOTION_LABELS_MAP, MAX_WORDS, top_2_categorical_accuracy
+from training.train_cnn import EMOTION_VALUES_MAP, EMOTION_LABELS_MAP, MAX_WORDS, \
+    top_2_categorical_accuracy, create_text_representation_vectors, create_glove_embedding_index
 
 SEED = 7
 numpy.random.seed(SEED)
@@ -26,9 +27,13 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Perform emotion analysis on a given dataset.')
     parser.add_argument('-m', '--model-path', default='emotion_analysis_CNN_keras_2.h5',
                         type=str, help='Path to a file with trained emotion analysis model.')
-    parser.add_argument('-t', '--tokenizer-path', default='tokenizer.bin',
+    parser.add_argument('-t', '--tokenizer-path', default='tokenizer.pkl',
                         type=str, help='Path to a serialized keras.preprocessing.text.Tokenizer object'
                                        'used during model training.')
+    parser.add_argument('-g', '--glove-embeddings-path', default='glove_embeddings/glove.6B.300d.txt',
+                        type=str, help='Path to glove embeddings file.')
+    parser.add_argument('-d', '--glove-embeddings-dim', default=300,
+                        type=int, help='GloVe embeddings dimension.')
     return parser.parse_args()
 
 
@@ -39,7 +44,8 @@ if __name__ == '__main__':
     model = load_model(args.model_path, custom_objects={'top_2_categorical_accuracy': top_2_categorical_accuracy})
 
     # Prepare test data
-    test_tweets = ['I hate Trump and his supporters.',
+    test_tweets = ['Yay :D',
+                   'I hate Trump and his supporters.',
                    'I hate you, but I love you.',
                    'I love you, but I hate you.',
                    'I just finished watching your Stanford iPhone Class session. I really appreciate it. You Rock!',
@@ -75,7 +81,16 @@ if __name__ == '__main__':
     preprocessed_test_tweets = tokenizer.texts_to_sequences(test_tweets)
     preprocessed_test_tweets = sequence.pad_sequences(preprocessed_test_tweets, maxlen=MAX_WORDS)
 
-    predictions = model.predict(numpy.array(preprocessed_test_tweets))
+    embedding_index = create_glove_embedding_index(glove_embeddings_file_path=args.glove_embeddings_path,)
+    trvs = create_text_representation_vectors(texts=preprocessed_test_tweets,
+                                              word_index=tokenizer.word_index,
+                                              embeddings_index=embedding_index,
+                                              glove_embeddings_dim=args.glove_embeddings_dim)
+    # Change trvs to three dimensional sequence of vectors
+    trvs = numpy.array(trvs)
+    trvs = numpy.expand_dims(trvs, axis=2)
+
+    predictions = model.predict(trvs)
 
     explainer = LimeTextExplainer(class_names=['love', 'fun', 'neutral', 'worry', 'sadness',
                                   'hate'], kernel_width=12)
@@ -83,7 +98,13 @@ if __name__ == '__main__':
     def lime_predict(texts):
         preprocessed_texts = tokenizer.texts_to_sequences(texts)
         preprocessed_texts = sequence.pad_sequences(preprocessed_texts, maxlen=MAX_WORDS)
-        return model.predict(preprocessed_texts, batch_size=256)
+        lime_trvs = create_text_representation_vectors(texts=preprocessed_texts,
+                                                       word_index=tokenizer.word_index,
+                                                       embeddings_index=embedding_index)
+        # Change trvs to three dimensional sequence of vectors
+        lime_trvs = numpy.array(lime_trvs)
+        lime_trvs = numpy.expand_dims(lime_trvs, axis=2)
+        return model.predict(lime_trvs, batch_size=256)
 
     for tweet, prediction in zip(test_tweets, predictions):
         print('Emotion: {}, Accuracy: {:.2f}, Text: {}'.format(get_predicted_emotion(prediction),

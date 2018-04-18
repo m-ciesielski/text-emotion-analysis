@@ -3,17 +3,22 @@ import pickle
 import time
 import os
 
+from imblearn.over_sampling import smote
 import numpy
 import pandas
+import keras.backend as K
 from keras.utils.np_utils import to_categorical
 from keras.preprocessing import sequence
 from keras.preprocessing.text import Tokenizer
-from keras.callbacks import CSVLogger
+from keras.callbacks import CSVLogger, EarlyStopping
 from keras.metrics import top_k_categorical_accuracy, categorical_accuracy
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.decomposition import PCA
+from matplotlib import pyplot as plt
 
-from models.networks.cnn import glove_model, gloveless_model, glove_model_layered
+from models.networks.cnn import glove_model, gloveless_model, glove_model_layered, glove_model_trv
 # fix random seed for reproducibility
 SEED = 7
 
@@ -39,6 +44,84 @@ def get_emotion_from_categorical(categorical):
 def top_2_categorical_accuracy(y_true, y_pred):
     return top_k_categorical_accuracy(y_true=y_true, y_pred=y_pred, k=2)
 
+
+def precision(y_true, y_pred):
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    return true_positives / (predicted_positives + K.epsilon())
+
+
+def recall(y_true, y_pred):
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+    return true_positives / (possible_positives + K.epsilon())
+
+
+def create_glove_embedding_index(glove_embeddings_file_path):
+    embeddings_index = {}
+    with open(os.path.join(glove_embeddings_file_path), 'r', encoding='utf-8') as glove_file:
+        for line in glove_file:
+            values = line.split()
+            word = values[0]
+            coefs = numpy.asarray(values[1:], dtype='float32')
+            embeddings_index[word] = coefs
+
+    return embeddings_index
+
+
+def create_text_representation_vectors(texts, word_index, embeddings_index,
+                                       glove_embeddings_dim=300):
+    lost_words_count = 0
+    found_words_count = 0
+    embedding_matrix = numpy.zeros((len(word_index) + 1, glove_embeddings_dim))
+    for word, i in word_index.items():
+        embedding_vector = embeddings_index.get(word)
+        if embedding_vector is not None:
+            # words not found in embedding index will be all-zeros.
+            embedding_matrix[i] = embedding_vector
+            found_words_count += 1
+        else:
+            lost_words_count += 1
+            # print('Lost word: {}'.format(word))
+
+    # print('Found {} word vectors.'.format(len(embeddings_index)))
+    # print('GloVe representations not found for {} words.'.format(lost_words_count))
+    # print('GloVe representations found for {} words.'.format(found_words_count))
+
+    # TRV - text representation vectors
+    # Compute TRVs as linear combination of word embedding vectors
+    text_representation_vectors = []
+    for text in texts:
+        trv = numpy.sum([embedding_matrix[word_id] for word_id in text], axis=0)
+        text_representation_vectors.append(trv)
+
+    return text_representation_vectors
+
+
+def show_pca_and_lda_plots(x_res, y_res):
+    pca = PCA(n_components=4)
+    X_r = pca.fit(x_res).transform(x_res)
+    lda = LinearDiscriminantAnalysis(n_components=4)
+    X_r2 = lda.fit(x_res, y_res).transform(x_res)
+    colors = ['navy', 'turquoise', 'darkorange', 'red', 'yellow', 'green', 'purple']
+    lw = 2
+    plt.figure()
+    for color, i, target_name in zip(colors, [0, 1, 2, 3, 4, 5], ['love', 'happiness',
+                                                         'neutral', 'worry',
+                                                         'sadness', 'hate']):
+        plt.scatter(X_r[y_res == i, 0], X_r[y_res == i, 1], color=color, alpha=.3, lw=lw,
+                    label=target_name)
+    plt.legend(loc='best', shadow=False, scatterpoints=1)
+    plt.title('PCA of dataset after SMOTE.')
+    plt.figure()
+    for color, i, target_name in zip(colors, [0, 1, 2, 3, 4, 5], ['love', 'happiness',
+                                                         'neutral', 'worry',
+                                                         'sadness', 'hate']):
+        plt.scatter(X_r2[y_res == i, 0], X_r2[y_res == i, 1], alpha=.5, color=color,
+                    label=target_name)
+    plt.legend(loc='best', shadow=False, scatterpoints=1)
+    plt.title('LDA of dataset after SMOTE.')
+    plt.show()
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train CNN network for emotion analysis.')
@@ -68,8 +151,13 @@ if __name__ == '__main__':
     tweets = dataset['content']
     sentiment = dataset['sentiment']
 
+    # Print count of tweets from each class
+    for emotion in EMOTION_LABELS_MAP.keys():
+        emotion_tweets = [t[1] for t, s in zip(tweets.iteritems(), sentiment.iteritems()) if s[1] == emotion]
+        print('Count of tweets with class {}: {}'.format(emotion, len(emotion_tweets)))
+
     # Preprocessing
-    tokenizer = Tokenizer()
+    tokenizer = Tokenizer(filters='!"#$%&*+,-.<=>?@[\\]^_`{}~\t\n')
     tokenizer.fit_on_texts(tweets)
 
     # Dump fitted tokenizer
@@ -77,59 +165,53 @@ if __name__ == '__main__':
         pickle.dump(tokenizer, tokenizer_file)
 
     preprocessed_texts = tokenizer.texts_to_sequences(tweets)
-    word_index = tokenizer.word_index
 
-    categorical_sentiment = [EMOTION_LABELS_MAP[sentiment_label] for sentiment_label in sentiment]
-    categorical_sentiment = to_categorical(categorical_sentiment)
+    text_labels = [EMOTION_LABELS_MAP[sentiment_label] for sentiment_label in sentiment]
+    text_labels = to_categorical(text_labels)
 
     # Padding
     preprocessed_texts = sequence.pad_sequences(preprocessed_texts, maxlen=MAX_WORDS)
 
     # Prepare model
-    if USE_GLOVE:
-        embeddings_index = {}
-        with open(os.path.join(args.glove_embeddings_path), 'r', encoding='utf-8') as glove_file:
-            for line in glove_file:
-                values = line.split()
-                word = values[0]
-                coefs = numpy.asarray(values[1:], dtype='float32')
-                embeddings_index[word] = coefs
+    embedding_index = create_glove_embedding_index(args.glove_embeddings_path)
+    # Construct text representation vectors
+    trvs = create_text_representation_vectors(texts=preprocessed_texts,
+                                              word_index=tokenizer.word_index,
+                                              embeddings_index=embedding_index,
+                                              glove_embeddings_dim=args.glove_embeddings_dim)
+    # SMOTE
+    sm = smote.SMOTE()
+    smote_labels = [numpy.argmax(label) for label in text_labels]
+    x_res, y_res = sm.fit_sample(trvs, smote_labels)
 
-        lost_words_count = 0
-        found_words_count = 0
-        embedding_matrix = numpy.zeros((len(word_index) + 1, args.glove_embeddings_dim))
-        for word, i in word_index.items():
-            embedding_vector = embeddings_index.get(word)
-            if embedding_vector is not None:
-                # words not found in embedding index will be all-zeros.
-                embedding_matrix[i] = embedding_vector
-                found_words_count += 1
-            else:
-                lost_words_count += 1
-
-        print('Found %s word vectors.' % len(embeddings_index))
-        print('GloVe representations not found for %s words.' % lost_words_count)
-        print('GloVe representations found for %s words.' % found_words_count)
-        model = glove_model(input_dim=len(word_index) + 1,
-                            embedding_matrix=embedding_matrix,
-                            embedding_dim=args.glove_embeddings_dim,
-                            input_length=MAX_WORDS
-                            )
-    else:
-        model = gloveless_model(input_dim=MAX_FEATURES, input_length=MAX_WORDS)
-
+    # Expand x_res to 3 dimensions
+    x_res = numpy.expand_dims(x_res, axis=2)
+    # Convert text_labels back to ocategorical
+    y_res = to_categorical(y_res)
     # Split train/test data
-    preprocessed_texts = numpy.array(preprocessed_texts)
-    x_train, x_test, y_train, y_test = train_test_split(preprocessed_texts, categorical_sentiment,
-                                                        test_size=0.25, random_state=SEED)
+    x_train, x_test, y_train, y_test = train_test_split(x_res, y_res,
+                                                        test_size=0.20, random_state=SEED)
+    print(x_train[0])
+    print(y_train[0])
+    model = glove_model_trv(trv_size=args.glove_embeddings_dim)
 
     print('Build model...')
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=[categorical_accuracy,
-                                                                              top_2_categorical_accuracy])
+    model.compile(loss='categorical_crossentropy',
+                  optimizer='adam',
+                  metrics=[categorical_accuracy,
+                           top_2_categorical_accuracy])
     print(model.summary())
 
-    model.fit(x=x_train, y=y_train, validation_data=(x_test, y_test), epochs=args.epochs, batch_size=256, verbose=2,
-              callbacks=[CSVLogger('training_{time}.csv'.format(time=time.time()))])
+    # plot_model(model, to_file='model.png')
+
+    model.fit(x=x_train, y=y_train,
+              validation_data=(x_test, y_test),
+              epochs=args.epochs,
+              batch_size=256,
+              verbose=1,
+              callbacks=[CSVLogger('training_{time}.csv'.format(time=time.time())),
+                         EarlyStopping(monitor='val_loss', min_delta=0.001, patience=8, verbose=1,
+                                       mode='auto')])
 
     # Evaluate model (on test data)
     predictions = model.predict(x_test, verbose=0)
