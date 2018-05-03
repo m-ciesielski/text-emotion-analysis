@@ -3,7 +3,7 @@ import pickle
 import time
 import os
 
-from imblearn.over_sampling import smote
+from imblearn.over_sampling import smote, adasyn
 import numpy
 import pandas
 import keras.backend as K
@@ -16,6 +16,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 from matplotlib import pyplot as plt
 
 from models.networks.cnn import glove_model, gloveless_model, glove_model_layered, glove_model_trv
@@ -98,30 +99,57 @@ def create_text_representation_vectors(texts, word_index, embeddings_index,
     return text_representation_vectors
 
 
-def show_pca_and_lda_plots(x_res, y_res):
-    pca = PCA(n_components=4)
-    X_r = pca.fit(x_res).transform(x_res)
-    lda = LinearDiscriminantAnalysis(n_components=4)
-    X_r2 = lda.fit(x_res, y_res).transform(x_res)
-    colors = ['navy', 'turquoise', 'darkorange', 'red', 'yellow', 'green', 'purple']
+def show_pca_and_lda_plots(x, y, max_items=None):
+    if max_items:
+        x, y = x[:max_items], y[:max_items]
+
+    pca = PCA(n_components=2)
+    X_r = pca.fit(x).transform(x)
+    lda = LinearDiscriminantAnalysis(n_components=2)
+    X_r2 = lda.fit(x, y).transform(x)
+    # colors = ['navy', 'turquoise', 'darkorange', 'red', 'yellow', 'green', 'purple']
+    colors = ['green', 'blue']
     lw = 2
     plt.figure()
-    for color, i, target_name in zip(colors, [0, 1, 2, 3, 4, 5], ['love', 'happiness',
-                                                         'neutral', 'worry',
-                                                         'sadness', 'hate']):
-        plt.scatter(X_r[y_res == i, 0], X_r[y_res == i, 1], color=color, alpha=.3, lw=lw,
+    for color, i, target_name in zip(colors, [0, 1], ['love', 'happiness']):
+        plt.scatter(X_r[y == i, 0], X_r[y == i, 1], color=color, alpha=.5, lw=lw,
                     label=target_name)
     plt.legend(loc='best', shadow=False, scatterpoints=1)
     plt.title('PCA of dataset after SMOTE.')
     plt.figure()
-    for color, i, target_name in zip(colors, [0, 1, 2, 3, 4, 5], ['love', 'happiness',
-                                                         'neutral', 'worry',
-                                                         'sadness', 'hate']):
-        plt.scatter(X_r2[y_res == i, 0], X_r2[y_res == i, 1], alpha=.5, color=color,
+    for color, i, target_name in zip(colors, [0, 1], ['love', 'happiness']):
+        plt.scatter(X_r2[y == i, 0], X_r2[y == i, 1], alpha=.5, color=color,
                     label=target_name)
     plt.legend(loc='best', shadow=False, scatterpoints=1)
     plt.title('LDA of dataset after SMOTE.')
     plt.show()
+
+
+def show_tsne_plot(x, y, max_items=10000):
+    if max_items:
+        x, y = x[:max_items], y[:max_items]
+
+    # Reduce initial dimensionality with PCA
+    pca = PCA(n_components=50)
+    X_r = pca.fit(x).transform(x)
+
+    print('Cumulative explained variation for 50 principal components: {}'.format(
+        numpy.sum(pca.explained_variance_ratio_)))
+
+    tsne_start = time.time()
+    X_embedded = TSNE(n_components=2).fit_transform(X_r)
+    print('t-SNE done! Time elapsed: {} seconds'.format(time.time() - tsne_start))
+
+    colors = ['deeppink', 'purple']
+    # colors = ['navy', 'turquoise', 'darkorange', 'red', 'yellow', 'green', 'purple']
+    for color, i, target_name in zip(colors, [0, 5], ['love', 'hate']):
+        plt.scatter(X_embedded[y == i, 0], X_embedded[y == i, 1], alpha=.7, color=color,
+                    label=target_name)
+
+    plt.legend(loc='best', shadow=False, scatterpoints=1)
+    plt.title('T-SNE of dataset after SMOTE.')
+    plt.show()
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train CNN network for emotion analysis.')
@@ -175,22 +203,47 @@ if __name__ == '__main__':
     # Prepare model
     embedding_index = create_glove_embedding_index(args.glove_embeddings_path)
     # Construct text representation vectors
+
+    trv_start = time.time()
     trvs = create_text_representation_vectors(texts=preprocessed_texts,
                                               word_index=tokenizer.word_index,
                                               embeddings_index=embedding_index,
                                               glove_embeddings_dim=args.glove_embeddings_dim)
+    print('TRVS created! Time elapsed: {} seconds'.format(time.time() - trv_start))
+
+    # Split train/test data
+    trvs = numpy.array(trvs)
+
     # SMOTE
     sm = smote.SMOTE()
+    # sm = adasyn.ADASYN(n_jobs=4, ratio='minority')
     smote_labels = [numpy.argmax(label) for label in text_labels]
+
+    # show_pca_and_lda_plots(numpy.array(trvs), numpy.array(smote_labels))
+    # show_tsne_plot(numpy.array(trvs), numpy.array(smote_labels))
+
+    # print(numpy.shape(numpy.array(trvs)))
+    # show_pca_and_lda_plots(numpy.array(trvs), smote_labels)
+
+    smote_start = time.time()
     x_res, y_res = sm.fit_sample(trvs, smote_labels)
+    print('SMOTE done! Time elapsed: {} seconds'.format(time.time() - smote_start))
+
+    #show_tsne_plot(x_res, y_res)
+
+    print(numpy.shape(x_res))
+
+    # show_pca_and_lda_plots(x_res, y_res)
 
     # Expand x_res to 3 dimensions
     x_res = numpy.expand_dims(x_res, axis=2)
-    # Convert text_labels back to ocategorical
+    # Convert text_labels back to categorical
     y_res = to_categorical(y_res)
-    # Split train/test data
+
     x_train, x_test, y_train, y_test = train_test_split(x_res, y_res,
-                                                        test_size=0.20, random_state=SEED)
+                                                        test_size=0.20,
+                                                        random_state=SEED)
+
     print(x_train[0])
     print(y_train[0])
     model = glove_model_trv(trv_size=args.glove_embeddings_dim)
@@ -210,8 +263,8 @@ if __name__ == '__main__':
               batch_size=256,
               verbose=1,
               callbacks=[CSVLogger('training_{time}.csv'.format(time=time.time())),
-                         EarlyStopping(monitor='val_loss', min_delta=0.001, patience=8, verbose=1,
-                                       mode='auto')])
+                         EarlyStopping(monitor='val_loss', min_delta=0.001,
+                                       patience=8, verbose=1, mode='auto')])
 
     # Evaluate model (on test data)
     predictions = model.predict(x_test, verbose=0)
