@@ -23,6 +23,12 @@ def get_predicted_emotion(prediction_array: numpy.array):
     return EMOTION_VALUES_MAP[predicted_class_index]
 
 
+def get_predicted_emotions(prediction_array: numpy.array):
+    return ['{}: {}'.format(emotion, acc) for emotion, acc
+            in zip(['love', 'happiness', 'neutral',
+                    'worry', 'sadness', 'hate'], prediction_array)]
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Perform emotion analysis on a given dataset.')
     parser.add_argument('-m', '--model-path', default='emotion_analysis_CNN_keras_2.h5',
@@ -44,7 +50,15 @@ if __name__ == '__main__':
     model = load_model(args.model_path, custom_objects={'top_2_categorical_accuracy': top_2_categorical_accuracy})
 
     # Prepare test data
-    test_tweets = ['Yay :D',
+    test_tweets = [
+        "Yay, I've completed an three star map in osu! yesterday xd",
+        'Great, good fucking job moron',
+        'Wow, what an amazing piece of shit it is',
+        'Lol, I broke my leg today xd',
+        'My head hurts :(',
+        'Not good, not good at all.',
+        'Not good, not good at all :(',
+        'Yay :D',
                    'I hate Trump and his supporters.',
                    'I hate you, but I love you.',
                    'I love you, but I hate you.',
@@ -107,9 +121,11 @@ if __name__ == '__main__':
         return model.predict(lime_trvs, batch_size=256)
 
     for tweet, prediction in zip(test_tweets, predictions):
-        print('Emotion: {}, Accuracy: {:.2f}, Text: {}'.format(get_predicted_emotion(prediction),
-                                                               get_prediction_accuracy(prediction),
-                                                               tweet))
+        print('Prediction: {}, top emotion: {}, Accuracy: {:.2f}, Text: {}'.format(
+            get_predicted_emotions(prediction),
+            get_predicted_emotion(prediction),
+            get_prediction_accuracy(prediction),
+            tweet))
 
     for tweet, prediction in zip(test_tweets, predictions):
         # predicted_label = numpy.argmax(prediction)
