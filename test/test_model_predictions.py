@@ -8,7 +8,7 @@ from lime.lime_text import LimeTextExplainer
 import matplotlib.pyplot as plt
 
 from training.train_cnn import EMOTION_VALUES_MAP, EMOTION_LABELS_MAP, MAX_WORDS, \
-    top_2_categorical_accuracy, create_text_representation_vectors, create_glove_embedding_index
+    top_2_categorical_accuracy, create_text_representation_vectors, create_glove_embedding_index, create_embedding_matrix
 
 SEED = 7
 numpy.random.seed(SEED)
@@ -51,6 +51,9 @@ if __name__ == '__main__':
 
     # Prepare test data
     test_tweets = [
+        "I don't hate it, to be honest, it makes me really happy!",
+        "Karius has the worst day of his career. Must be devastating, I feel sorry for him. ",
+        "Daaamn son, Liverpool arent't fucking around",
         "Yay, I've completed an three star map in osu! yesterday xd",
         'Great, good fucking job moron',
         'Wow, what an amazing piece of shit it is',
@@ -91,20 +94,23 @@ if __name__ == '__main__':
     # Load dumped tokenizer
     with open(args.tokenizer_path, 'rb') as tokenizer_file:
         tokenizer = pickle.load(tokenizer_file)
+        tokenizer.filters = '"#$%&*+,-.<=>?@[\\]^_`{}~\t\n'
 
     preprocessed_test_tweets = tokenizer.texts_to_sequences(test_tweets)
     preprocessed_test_tweets = sequence.pad_sequences(preprocessed_test_tweets, maxlen=MAX_WORDS)
 
-    embedding_index = create_glove_embedding_index(glove_embeddings_file_path=args.glove_embeddings_path,)
-    trvs = create_text_representation_vectors(texts=preprocessed_test_tweets,
-                                              word_index=tokenizer.word_index,
-                                              embeddings_index=embedding_index,
-                                              glove_embeddings_dim=args.glove_embeddings_dim)
-    # Change trvs to three dimensional sequence of vectors
-    trvs = numpy.array(trvs)
-    trvs = numpy.expand_dims(trvs, axis=2)
+    embedding_index = create_glove_embedding_index(glove_embeddings_file_path=args.glove_embeddings_path)
+    embedding_matrix = create_embedding_matrix(word_index=tokenizer.word_index,
+                                               embeddings_index=embedding_index,
+                                               glove_embeddings_dim=args.glove_embeddings_dim)
+    # trvs = create_text_representation_vectors(texts=preprocessed_test_tweets,
+    #                                           embedding_matrix=embedding_matrix)
+    # # Change trvs to three dimensional sequence of vectors
+    # trvs = numpy.array(trvs)
+    # trvs = numpy.expand_dims(trvs, axis=2)
+    preprocessed_test_tweets = numpy.array(preprocessed_test_tweets)
 
-    predictions = model.predict(trvs)
+    predictions = model.predict(preprocessed_test_tweets)
 
     explainer = LimeTextExplainer(class_names=['love', 'fun', 'neutral', 'worry', 'sadness',
                                   'hate'], kernel_width=12)
@@ -112,13 +118,13 @@ if __name__ == '__main__':
     def lime_predict(texts):
         preprocessed_texts = tokenizer.texts_to_sequences(texts)
         preprocessed_texts = sequence.pad_sequences(preprocessed_texts, maxlen=MAX_WORDS)
-        lime_trvs = create_text_representation_vectors(texts=preprocessed_texts,
-                                                       word_index=tokenizer.word_index,
-                                                       embeddings_index=embedding_index)
-        # Change trvs to three dimensional sequence of vectors
-        lime_trvs = numpy.array(lime_trvs)
-        lime_trvs = numpy.expand_dims(lime_trvs, axis=2)
-        return model.predict(lime_trvs, batch_size=256)
+        # lime_trvs = create_text_representation_vectors(texts=preprocessed_texts,
+        #                                                embedding_matrix=embedding_matrix)
+        # # Change trvs to three dimensional sequence of vectors
+        # lime_trvs = numpy.array(lime_trvs)
+        # lime_trvs = numpy.expand_dims(lime_trvs, axis=2)
+        preprocessed_texts = numpy.array(preprocessed_texts)
+        return model.predict(preprocessed_texts, batch_size=256)
 
     for tweet, prediction in zip(test_tweets, predictions):
         print('Prediction: {}, top emotion: {}, Accuracy: {:.2f}, Text: {}'.format(
