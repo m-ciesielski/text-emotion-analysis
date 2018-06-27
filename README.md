@@ -28,3 +28,8 @@ Create new Conda environment and install Conda dependencies:
 
 And install pip dependecies with:
 `pip install -r requirements.txt`
+
+## Data
+
+Dataset used for training models is based on Sentiment Analysis: Emotion in Text dataset and can be downloaded from this location:
+https://s3.eu-central-1.amazonaws.com/tea-datasets/text_emotion_augmented_v2.csv
