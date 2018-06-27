@@ -5,7 +5,7 @@ import pandas
 
 
 def load_dataset(path: str) -> pandas.DataFrame:
-    dataset = pandas.read_csv(path, encoding='utf-8', sep=' ', quotechar='|')
+    dataset = pandas.read_csv(path, encoding='cp1250', sep=' ', quotechar='|')
     return dataset
 
 
@@ -25,8 +25,12 @@ def classify_loop(dataset: pandas.DataFrame, text_column: str,
     if 'label' not in dataset.columns:
         dataset['label'] = pandas.Series([None for _ in range(len(dataset))], index=dataset.index)
     text_labels = dataset['label']
+    text_sentiments = dataset['sentiment']
     label_id_mapping = map_labels_to_ids(labels)
-    for i, text, label in zip((i for i in range(len(texts))), texts, text_labels):
+    for i, text, label, sentiment in zip((i for i in range(len(texts))), texts, text_labels, text_sentiments):
+        # Classify only tweets with negative sentiment
+        if sentiment != 'negative':
+            continue
         # Skip classification for already labelled data
         if label in labels:
             continue

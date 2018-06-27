@@ -182,6 +182,31 @@ def oversample_with_duplicates(x: list or numpy.ndarray, y: list or numpy.ndarra
     return oversampled_x, oversampled_y
 
 
+def random_undersampling(x: list or numpy.ndarray, y: list or numpy.ndarray, ratio=0.8):
+    undersampled_x = list(x)
+    undersampled_y = list(y)
+
+    class_sizes = defaultdict(int)
+    for label in y:
+        class_sizes[label] += 1
+
+    target_size = int(max(class_size for class_size in class_sizes.values()) * ratio)
+
+    class_items_to_remove = defaultdict(int)
+    for class_label, class_size in class_sizes.items():
+        class_items_to_remove[class_label] = class_size - target_size
+        print('Removing {} items from class {}'. format(class_items_to_remove[class_label], class_label))
+
+    for i, item in enumerate(zip(undersampled_x, undersampled_y)):
+        x, y = item
+        if class_items_to_remove[y] > 0:
+            del undersampled_x[i]
+            del undersampled_y[i]
+            class_items_to_remove[y] -= 1
+
+    return undersampled_x, undersampled_y
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Train CNN network for emotion analysis.')
     parser.add_argument('-d', '--dataset-path', required=True,
@@ -209,6 +234,13 @@ if __name__ == '__main__':
 
     # Shuffle dataset
     dataset = dataset.sample(frac=1)
+
+    # # Limit number of examples for given classes
+    # g = dataset.groupby('sentiment')
+    # dataset = g.apply(lambda x: x.sample(g.size().max()).reset_index(drop=True))
+    #
+    # # Shuffle dataset again
+    # dataset = dataset.sample(frac=1)
 
     tweets = dataset['content']
     sentiment = dataset['sentiment']
@@ -304,22 +336,22 @@ if __name__ == '__main__':
         preprocessed_texts = numpy.array(preprocessed_texts)
         text_labels = numpy.array(text_labels)
         x_train, x_test, y_train, y_test = train_test_split(preprocessed_texts, text_labels,
-                                                            test_size=0.10,
+                                                            test_size=0.20,
                                                             random_state=SEED)
 
-        # Show test data
-        index_word = {v: k for k, v in tokenizer.word_index.items()}  # map back
-        for tokenized_text, label in zip(x_test, y_test):
-            if numpy.argmax(label) in {4, 5}:
-                print(numpy.argmax(label))
-                text = ' '.join(index_word[token] for token in tokenized_text if token != 0)
-                print(text)
+        # # Show test data
+        # index_word = {v: k for k, v in tokenizer.word_index.items()}  # map back
+        # for tokenized_text, label in zip(x_test, y_test):
+        #     if numpy.argmax(label) in {4, 5}:
+        #         print(numpy.argmax(label))
+        #         text = ' '.join(index_word[token] for token in tokenized_text if token != 0)
+        #         print(text)
 
         # exit(0)
 
         duplicate_oversampling_start = time.time()
         singular_y_train_labels = [numpy.argmax(label) for label in y_train]
-        x_train, y_train = oversample_with_duplicates(x_train, singular_y_train_labels, ratio=0.2)
+        x_train, y_train = random_undersampling(x_train, singular_y_train_labels, ratio=0.7)
         y_train = to_categorical(y_train)
         x_train, y_train = numpy.array(x_train), numpy.array(y_train)
         print('Duplicate oversampling done! Time elapsed: {} seconds'.format(time.time()

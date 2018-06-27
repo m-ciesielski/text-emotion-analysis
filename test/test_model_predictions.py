@@ -51,6 +51,7 @@ if __name__ == '__main__':
 
     # Prepare test data
     test_tweets = [
+        'I hate you, but I love you.',
         "I don't hate it, to be honest, it makes me really happy!",
         "Karius has the worst day of his career. Must be devastating, I feel sorry for him. ",
         "Daaamn son, Liverpool arent't fucking around",

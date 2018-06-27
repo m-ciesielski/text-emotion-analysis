@@ -49,12 +49,12 @@ def main():
     args = parse_args()
     download_required_corpora()
 
-    dataset = pandas.read_csv(args.dataset_path, sep=' ', quotechar='|', encoding='utf-8')
+    dataset = pandas.read_csv(args.dataset_path,  encoding='utf-8')
 
-    predicted_sentiment = predict_sentiment(dataset['Text'])
+    predicted_sentiment = predict_sentiment(dataset['content'])
     dataset['sentiment'] = predicted_sentiment
 
-    dataset.to_csv(args.output_path, sep=' ', quotechar='|', encoding='utf-8')
+    dataset.to_csv(args.output_path,  encoding='utf-8')
 
 
 if __name__ == '__main__':

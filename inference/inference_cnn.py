@@ -107,7 +107,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Perform emotion analysis on a given dataset.')
     parser.add_argument('-d', '--dataset-path', default=os.environ.get('DATASET_PATH'),
                         type=str, help='Path to dataset CSV file.')
-    parser.add_argument('-m', '--model-path', default='ea_cnn_we.h5',
+    parser.add_argument('-m', '--model-path', default='ea_cnn_we_fin.h5',
                         type=str, help='Path to a file with trained emotion analysis model.')
     parser.add_argument('-t', '--tokenizer-path', default='tokenizer.pkl',
                         type=str, help='Path to a serialized keras.preprocessing.text.Tokenizer object'
