@@ -12,6 +12,7 @@ from keras.callbacks import CSVLogger
 from keras.metrics import categorical_accuracy
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
 
 from models.networks.cnn import glove_sentiment_model
 # fix random seed for reproducibility

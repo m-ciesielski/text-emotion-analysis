@@ -1,25 +1,29 @@
 import argparse
+from collections import defaultdict
 import pickle
+import random
 import time
 import os
 
+import re
 from imblearn.over_sampling import smote, adasyn
 import numpy
 import pandas
 import keras.backend as K
+from keras.utils import plot_model
 from keras.utils.np_utils import to_categorical
 from keras.preprocessing import sequence
 from keras.preprocessing.text import Tokenizer
 from keras.callbacks import CSVLogger, EarlyStopping
 from keras.metrics import top_k_categorical_accuracy, categorical_accuracy
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from matplotlib import pyplot as plt
 
-from models.networks.cnn import glove_model, gloveless_model, glove_model_layered, glove_model_trv
+from models.networks.cnn import glove_model_trv, glove_model, glove_model_multikernel, glove_model_lstm, glove_model_layered
 # fix random seed for reproducibility
 SEED = 7
 
@@ -29,11 +33,11 @@ MAX_FEATURES = 50000
 MAX_WORDS = 37
 
 # Map each label to integer value
-EMOTION_LABELS_MAP = {'love': 0, 'happiness': 1, 'enthusiasm': 1, 'fun': 1, 'relief': 1, 'neutral': 2,
-                      'surprise': 2, 'empty': 2, 'boredom': 2, 'worry': 3, 'sadness': 4, 'anger': 5,
+EMOTION_LABELS_MAP = {'love': 0, 'happiness': 1, 'enthusiasm': 1, 'fun': 1, 'relief': None, 'neutral': 2,
+                      'surprise': None, 'empty': 2, 'boredom': 2, 'worry': 3, 'sadness': 4, 'anger': 5,
                       'hate': 5}
 # Map integers to labels (reverse of EMOTION_LABELS_MAP)
-EMOTION_VALUES_MAP = {value: emotion for emotion, value in EMOTION_LABELS_MAP.items()}
+EMOTION_VALUES_MAP = {value: emotion for emotion, value in EMOTION_LABELS_MAP.items() if value is not None}
 
 
 def get_emotion_from_categorical(categorical):
@@ -70,8 +74,9 @@ def create_glove_embedding_index(glove_embeddings_file_path):
     return embeddings_index
 
 
-def create_text_representation_vectors(texts, word_index, embeddings_index,
-                                       glove_embeddings_dim=300):
+def create_embedding_matrix(word_index, embeddings_index,
+                            glove_embeddings_dim=300):
+    print(glove_embeddings_dim)
     lost_words_count = 0
     found_words_count = 0
     embedding_matrix = numpy.zeros((len(word_index) + 1, glove_embeddings_dim))
@@ -83,12 +88,11 @@ def create_text_representation_vectors(texts, word_index, embeddings_index,
             found_words_count += 1
         else:
             lost_words_count += 1
-            # print('Lost word: {}'.format(word))
 
-    # print('Found {} word vectors.'.format(len(embeddings_index)))
-    # print('GloVe representations not found for {} words.'.format(lost_words_count))
-    # print('GloVe representations found for {} words.'.format(found_words_count))
+    return embedding_matrix
 
+
+def create_text_representation_vectors(texts, embedding_matrix):
     # TRV - text representation vectors
     # Compute TRVs as linear combination of word embedding vectors
     text_representation_vectors = []
@@ -151,6 +155,58 @@ def show_tsne_plot(x, y, max_items=10000):
     plt.show()
 
 
+def oversample_with_duplicates(x: list or numpy.ndarray, y: list or numpy.ndarray, ratio=1.0):
+    # Calculate number of examples for each class
+
+    oversampled_x = list(x)
+    oversampled_y = list(y)
+
+    class_sizes = defaultdict(int)
+    for label in y:
+        class_sizes[label] += 1
+
+    target_size = max(class_size for class_size in class_sizes.values()) * ratio
+
+    for class_label, class_size in class_sizes.items():
+        class_items = [item for item, label in zip(x, y) if label == class_label]
+        items_to_add = target_size - class_size
+        items_to_add = items_to_add if items_to_add > 0 else 0
+        print('Duplicating {} items for class {}.'.format(items_to_add,
+                                                          class_label))
+        while items_to_add > 0:
+            item_to_duplicate = random.choice(class_items)
+            oversampled_x.append(item_to_duplicate)
+            oversampled_y.append(class_label)
+            items_to_add -= 1
+
+    return oversampled_x, oversampled_y
+
+
+def random_undersampling(x: list or numpy.ndarray, y: list or numpy.ndarray, ratio=0.8):
+    undersampled_x = list(x)
+    undersampled_y = list(y)
+
+    class_sizes = defaultdict(int)
+    for label in y:
+        class_sizes[label] += 1
+
+    target_size = int(max(class_size for class_size in class_sizes.values()) * ratio)
+
+    class_items_to_remove = defaultdict(int)
+    for class_label, class_size in class_sizes.items():
+        class_items_to_remove[class_label] = class_size - target_size
+        print('Removing {} items from class {}'. format(class_items_to_remove[class_label], class_label))
+
+    for i, item in enumerate(zip(undersampled_x, undersampled_y)):
+        x, y = item
+        if class_items_to_remove[y] > 0:
+            del undersampled_x[i]
+            del undersampled_y[i]
+            class_items_to_remove[y] -= 1
+
+    return undersampled_x, undersampled_y
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Train CNN network for emotion analysis.')
     parser.add_argument('-d', '--dataset-path', required=True,
@@ -176,6 +232,16 @@ if __name__ == '__main__':
 
     dataset = pandas.read_csv(args.dataset_path)
 
+    # Shuffle dataset
+    dataset = dataset.sample(frac=1)
+
+    # # Limit number of examples for given classes
+    # g = dataset.groupby('sentiment')
+    # dataset = g.apply(lambda x: x.sample(g.size().max()).reset_index(drop=True))
+    #
+    # # Shuffle dataset again
+    # dataset = dataset.sample(frac=1)
+
     tweets = dataset['content']
     sentiment = dataset['sentiment']
 
@@ -185,7 +251,12 @@ if __name__ == '__main__':
         print('Count of tweets with class {}: {}'.format(emotion, len(emotion_tweets)))
 
     # Preprocessing
-    tokenizer = Tokenizer(filters='!"#$%&*+,-.<=>?@[\\]^_`{}~\t\n')
+
+    # Handling exclamation marks
+    exclamation_mark_regex = re.compile(r'!+')
+    tweets = [exclamation_mark_regex.sub(' !', tweet) for tweet in tweets]
+
+    tokenizer = Tokenizer(filters='"#$%&*+,-.<=>?@[\\]^_`{}~\t\n')
     tokenizer.fit_on_texts(tweets)
 
     # Dump fitted tokenizer
@@ -194,59 +265,102 @@ if __name__ == '__main__':
 
     preprocessed_texts = tokenizer.texts_to_sequences(tweets)
 
-    text_labels = [EMOTION_LABELS_MAP[sentiment_label] for sentiment_label in sentiment]
+    # Reduce labels, remove tweets from unwanted categories
+    preprocessed_texts, text_labels = zip(*((preproc_text, EMOTION_LABELS_MAP[sentiment_label])
+                                            for preproc_text, sentiment_label in
+                                            zip(preprocessed_texts, sentiment)
+                                            if EMOTION_LABELS_MAP[sentiment_label] is not None))
+
     text_labels = to_categorical(text_labels)
 
     # Padding
     preprocessed_texts = sequence.pad_sequences(preprocessed_texts, maxlen=MAX_WORDS)
 
-    # Prepare model
     embedding_index = create_glove_embedding_index(args.glove_embeddings_path)
-    # Construct text representation vectors
-
-    trv_start = time.time()
-    trvs = create_text_representation_vectors(texts=preprocessed_texts,
-                                              word_index=tokenizer.word_index,
-                                              embeddings_index=embedding_index,
-                                              glove_embeddings_dim=args.glove_embeddings_dim)
-    print('TRVS created! Time elapsed: {} seconds'.format(time.time() - trv_start))
-
-    # Split train/test data
-    trvs = numpy.array(trvs)
+    embedding_matrix = create_embedding_matrix(word_index=tokenizer.word_index,
+                                               embeddings_index=embedding_index,
+                                               glove_embeddings_dim=args.glove_embeddings_dim)
 
     # SMOTE
-    sm = smote.SMOTE()
-    # sm = adasyn.ADASYN(n_jobs=4, ratio='minority')
-    smote_labels = [numpy.argmax(label) for label in text_labels]
+    USE_SMOTE = False
+    if USE_SMOTE:
+        # Construct text representation vectors
 
-    # show_pca_and_lda_plots(numpy.array(trvs), numpy.array(smote_labels))
-    # show_tsne_plot(numpy.array(trvs), numpy.array(smote_labels))
+        trv_start = time.time()
+        trvs = create_text_representation_vectors(texts=preprocessed_texts,
+                                                  embedding_matrix=embedding_matrix)
+        print('TRVS created! Time elapsed: {} seconds'.format(time.time() - trv_start))
 
-    # print(numpy.shape(numpy.array(trvs)))
-    # show_pca_and_lda_plots(numpy.array(trvs), smote_labels)
+        # Split train/test data
+        trvs = numpy.array(trvs)
 
-    smote_start = time.time()
-    x_res, y_res = sm.fit_sample(trvs, smote_labels)
-    print('SMOTE done! Time elapsed: {} seconds'.format(time.time() - smote_start))
+        print(numpy.shape(trvs))
+        sm = smote.SMOTE()
+        # sm = adasyn.ADASYN(n_jobs=4, ratio='minority')
 
-    #show_tsne_plot(x_res, y_res)
 
-    print(numpy.shape(x_res))
+        # show_pca_and_lda_plots(numpy.array(trvs), numpy.array(smote_labels))
+        # show_tsne_plot(numpy.array(trvs), numpy.array(smote_labels))
 
-    # show_pca_and_lda_plots(x_res, y_res)
+        # print(numpy.shape(numpy.array(trvs)))
+        # show_pca_and_lda_plots(numpy.array(trvs), smote_labels)
 
-    # Expand x_res to 3 dimensions
-    x_res = numpy.expand_dims(x_res, axis=2)
-    # Convert text_labels back to categorical
-    y_res = to_categorical(y_res)
+        # with open('data_before_smote.csv', mode='w', encoding='utf-8') as data_before_smote_file:
+        #     data = ''.join('{} : {} \n'.format(label, ','.join(str(vec) for vec in trv))
+        #                    for label, trv in zip(smote_labels, trvs))
+        #     data_before_smote_file.write(data)
+        #
+        # print('Original data saved')
+        x_train, x_test, y_train, y_test = train_test_split(trvs, text_labels,
+                                                            test_size=0.20,
+                                                            random_state=SEED)
 
-    x_train, x_test, y_train, y_test = train_test_split(x_res, y_res,
-                                                        test_size=0.20,
-                                                        random_state=SEED)
+        smote_start = time.time()
+        smote_labels = [numpy.argmax(label) for label in y_train]
+        x_train, y_train = sm.fit_sample(x_train, smote_labels)
+        print('SMOTE done! Time elapsed: {} seconds'.format(time.time() - smote_start))
 
-    print(x_train[0])
-    print(y_train[0])
-    model = glove_model_trv(trv_size=args.glove_embeddings_dim)
+        print(numpy.shape(x_train))
+
+        # show_pca_and_lda_plots(x_res, y_res)
+
+        # Expand x_res to 3 dimensions
+        x_train = numpy.expand_dims(x_train, axis=2)
+        x_test = numpy.expand_dims(x_test, axis=2)
+        # Convert text_labels back to categorical
+        y_train = to_categorical(y_train)
+
+        model = glove_model_trv(trv_size=args.glove_embeddings_dim)
+
+    else:
+        preprocessed_texts = numpy.array(preprocessed_texts)
+        text_labels = numpy.array(text_labels)
+        x_train, x_test, y_train, y_test = train_test_split(preprocessed_texts, text_labels,
+                                                            test_size=0.20,
+                                                            random_state=SEED)
+
+        # # Show test data
+        # index_word = {v: k for k, v in tokenizer.word_index.items()}  # map back
+        # for tokenized_text, label in zip(x_test, y_test):
+        #     if numpy.argmax(label) in {4, 5}:
+        #         print(numpy.argmax(label))
+        #         text = ' '.join(index_word[token] for token in tokenized_text if token != 0)
+        #         print(text)
+
+        # exit(0)
+
+        duplicate_oversampling_start = time.time()
+        singular_y_train_labels = [numpy.argmax(label) for label in y_train]
+        x_train, y_train = random_undersampling(x_train, singular_y_train_labels, ratio=0.7)
+        y_train = to_categorical(y_train)
+        x_train, y_train = numpy.array(x_train), numpy.array(y_train)
+        print('Duplicate oversampling done! Time elapsed: {} seconds'.format(time.time()
+                                                                             - duplicate_oversampling_start))
+
+        model = glove_model_multikernel(input_dim=len(tokenizer.word_index) + 1,
+                                        embedding_matrix=embedding_matrix,
+                                        embedding_dim=args.glove_embeddings_dim,
+                                        input_length=MAX_WORDS)
 
     print('Build model...')
     model.compile(loss='categorical_crossentropy',
@@ -255,7 +369,14 @@ if __name__ == '__main__':
                            top_2_categorical_accuracy])
     print(model.summary())
 
-    # plot_model(model, to_file='model.png')
+    print(x_train[0])
+    print(y_train[0])
+
+    PLOT_MODEL = True
+    if PLOT_MODEL:
+        import os
+        os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
+        plot_model(model, to_file='model_{}.png'.format(time.time()))
 
     model.fit(x=x_train, y=y_train,
               validation_data=(x_test, y_test),
@@ -273,5 +394,10 @@ if __name__ == '__main__':
     conf_matrix = confusion_matrix(y_true=[numpy.argmax(v) for v in y_test],
                                    y_pred=[numpy.argmax(pred) for pred in predictions])
     print(conf_matrix)
+
+    # classification metrics
+    report = classification_report(y_true=[numpy.argmax(v) for v in y_test],
+                                   y_pred=[numpy.argmax(pred) for pred in predictions])
+    print(report)
 
     model.save(args.model_path)
